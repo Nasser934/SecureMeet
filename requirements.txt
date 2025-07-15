@@ -1,0 +1,17 @@
+pyaudio
+numpy
+soundfile
+scipy
+torch
+torchaudio
+openai-whisper
+pyannote.audio
+tensorflow
+scikit-learn
+joblib
+librosa
+transformers
+python-docx
+markdown
+cryptography
+matplotlib
