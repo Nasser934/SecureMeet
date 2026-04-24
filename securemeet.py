@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from __future__ import annotations
 """
 SecureMeet - Complete Offline Meeting Transcription System
 A comprehensive solution for real-time meeting transcription with speaker identification,
@@ -32,10 +33,19 @@ import subprocess
 import tempfile
 import uuid
 
+MISSING_DEPENDENCIES: List[str] = []
+
+
+def _mark_missing(package_name: str, error: ImportError) -> None:
+    """Track missing import and emit a concise warning once at startup."""
+    MISSING_DEPENDENCIES.append(package_name)
+    print(f"Warning: {package_name} is not installed ({error}).")
+
+
 # Audio processing imports
 try:
-    import pyaudio
     import numpy as np
+    import pyaudio
     import soundfile as sf
     from scipy import signal
     import whisper
@@ -44,9 +54,16 @@ try:
     from pyannote.audio import Pipeline
     from pyannote.core import Annotation
 except ImportError as e:
-    print(f"Missing audio processing dependency: {e}")
-    print("pip install pyaudio numpy soundfile scipy torch torchaudio pyannote.audio")
-    sys.exit(1)
+    pyaudio = None
+    np = None
+    sf = None
+    signal = None
+    whisper = None
+    torch = None
+    torchaudio = None
+    Pipeline = None
+    Annotation = None
+    _mark_missing("audio stack (pyaudio/soundfile/scipy/whisper/torch/pyannote.audio)", e)
 
 # rnnoise is optional for noise suppression
 try:
@@ -63,9 +80,12 @@ try:
     import librosa
     from transformers import pipeline
 except ImportError as e:
-    print(f"Missing ML dependency: {e}")
-    print("pip install tensorflow scikit-learn joblib librosa transformers")
-    sys.exit(1)
+    tf = None
+    StandardScaler = None
+    joblib = None
+    librosa = None
+    pipeline = None
+    _mark_missing("ml stack (tensorflow/scikit-learn/joblib/librosa/transformers)", e)
 
 # Document processing imports
 try:
@@ -75,9 +95,12 @@ try:
     from docx.enum.text import WD_ALIGN_PARAGRAPH
     import markdown
 except ImportError as e:
-    print(f"Missing document processing dependency: {e}")
-    print("pip install python-docx markdown")
-    sys.exit(1)
+    docx = None
+    Inches = None
+    WD_STYLE_TYPE = None
+    WD_ALIGN_PARAGRAPH = None
+    markdown = None
+    _mark_missing("document stack (python-docx/markdown)", e)
 
 # Security imports
 try:
@@ -87,9 +110,12 @@ try:
     from cryptography.hazmat.backends import default_backend
     import cryptography.hazmat.primitives.ciphers.aead as aead
 except ImportError as e:
-    print(f"Missing security dependency: {e}")
-    print("pip install cryptography")
-    sys.exit(1)
+    Fernet = None
+    hashes = None
+    PBKDF2HMAC = None
+    default_backend = None
+    aead = None
+    _mark_missing("security stack (cryptography)", e)
 
 # GUI imports
 try:
@@ -100,9 +126,42 @@ try:
     from matplotlib.figure import Figure
     import matplotlib.animation as animation
 except ImportError as e:
-    print(f"Missing GUI dependency: {e}")
-    print("pip install matplotlib")
-    sys.exit(1)
+    tk = None
+    ttk = None
+    messagebox = None
+    filedialog = None
+    simpledialog = None
+    plt = None
+    FigureCanvasTkAgg = None
+    Figure = None
+    animation = None
+    _mark_missing("gui stack (tkinter/matplotlib)", e)
+
+
+def get_missing_dependencies(require_gui: bool) -> List[str]:
+    missing = [
+        dep for dep in MISSING_DEPENDENCIES
+        if require_gui or "gui stack" not in dep
+    ]
+    if np is None and "numpy" not in missing:
+        missing.append("numpy")
+    if pyaudio is None and "pyaudio" not in missing:
+        missing.append("pyaudio")
+    if tf is None and "tensorflow" not in missing:
+        missing.append("tensorflow")
+    if Pipeline is None and "pyannote.audio" not in missing:
+        missing.append("pyannote.audio")
+    if whisper is None and "openai-whisper" not in missing:
+        missing.append("openai-whisper")
+    if librosa is None and "librosa" not in missing:
+        missing.append("librosa")
+    if Fernet is None and "cryptography" not in missing:
+        missing.append("cryptography")
+    if docx is None and "python-docx" not in missing:
+        missing.append("python-docx")
+    if require_gui and tk is None and "tkinter" not in missing:
+        missing.append("tkinter")
+    return missing
 
 # Configure logging
 logging.basicConfig(
@@ -118,7 +177,7 @@ logger = logging.getLogger(__name__)
 # Configuration constants
 SAMPLE_RATE = 16000
 CHUNK_SIZE = 1024
-AUDIO_FORMAT = pyaudio.paInt16
+AUDIO_FORMAT = pyaudio.paInt16 if pyaudio else None
 CHANNELS = 1
 BUFFER_DURATION = 2.0  # seconds
 OVERLAP_DURATION = 0.5  # seconds
@@ -273,6 +332,9 @@ class AudioProcessor:
             logger.info("RNNoise not available; skipping noise suppression")
 
     def initialize_audio(self) -> bool:
+        if pyaudio is None:
+            logger.error("PyAudio is not installed. Install it to enable recording.")
+            return False
         try:
             self.pyaudio_instance = pyaudio.PyAudio()
             idx = self.find_best_input_device()
@@ -554,6 +616,8 @@ class DocumentExporter:
 # ----------------------------------------------------------------------------------
 class DataManager:
     def __init__(self, data_dir="data"):
+        if Fernet is None:
+            raise RuntimeError("cryptography is required for secure data storage")
         self.data_dir = Path(data_dir)
         self.data_dir.mkdir(exist_ok=True)
         self.encryption_key = self.get_or_create_key()
@@ -907,8 +971,28 @@ def main(argv: list[str] | None = None) -> None:
 
     parser = argparse.ArgumentParser(description="SecureMeet offline transcription tool")
     parser.add_argument("--no-gui", action="store_true", help="Run without starting the GUI")
+    parser.add_argument("--check-deps", action="store_true", help="Check runtime dependencies and exit")
     parser.add_argument("--version", action="version", version="SecureMeet 1.0.0")
     args = parser.parse_args(argv)
+
+    require_gui = not args.no_gui
+    missing = get_missing_dependencies(require_gui=require_gui)
+    if args.check_deps:
+        if missing:
+            print("Missing dependencies:")
+            for dep in missing:
+                print(f" - {dep}")
+            print("\nInstall base deps with: pip install -r requirements.txt")
+        else:
+            print("All required dependencies appear to be installed.")
+        return
+
+    if missing:
+        logger.error("SecureMeet cannot start. Missing dependencies: %s", ", ".join(missing))
+        logger.error("Install with: pip install -r requirements.txt")
+        if "tkinter" in missing:
+            logger.error("Tkinter is typically provided by your OS package manager.")
+        return
 
     if args.no_gui:
         logger.info("GUI disabled via --no-gui; exiting.")

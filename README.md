@@ -29,3 +29,9 @@ python3 securemeet.py
 
 Add `--no-gui` to skip launching the graphical interface (useful on headless
 systems). Running the GUI requires a desktop environment.
+
+You can also verify dependency availability before starting:
+
+```bash
+python3 securemeet.py --check-deps
+```
