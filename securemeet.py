@@ -385,8 +385,14 @@ class SpeakerDiarization:
             if model_path and os.path.exists(model_path):
                 self.pipeline = Pipeline.from_pretrained(model_path)
             else:
-                self.pipeline = Pipeline.from_pretrained(
-                    "pyannote/speaker-diarization-3.1", use_auth_token=None)
+                try:
+                    self.pipeline = Pipeline.from_pretrained("pyannote/speaker-diarization-3.1")
+                except TypeError:
+                    # Backward compatibility for pyannote versions that still
+                    # expect a token argument name.
+                    self.pipeline = Pipeline.from_pretrained(
+                        "pyannote/speaker-diarization-3.1", use_auth_token=None
+                    )
             self.is_loaded = True
             logger.info("Diarization pipeline ready")
         except Exception as e:
@@ -394,7 +400,14 @@ class SpeakerDiarization:
 
     def process_audio(self, audio_data: np.ndarray, sample_rate: int):
         if not self.is_loaded:
-            return {"speakers": [], "segments": []}
+            # Fallback mode when diarization model is unavailable:
+            # treat the whole chunk as a single speaker segment so
+            # transcription can continue.
+            duration = len(audio_data) / sample_rate if sample_rate else 0.0
+            return {
+                "speakers": ["SPEAKER_00"],
+                "segments": [{"start": 0.0, "end": duration, "speaker": "SPEAKER_00"}],
+            }
         try:
             tmp = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
             sf.write(tmp.name, audio_data, sample_rate)
